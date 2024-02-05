@@ -16,6 +16,8 @@ import {UserIntent, UserIntentLib} from "../interfaces/UserIntent.sol";
 import {getSegmentStandard} from "../standards/utils/SegmentData.sol";
 import {Exec, RevertReason} from "../utils/Exec.sol";
 import {ReentrancyGuard} from "openzeppelin/security/ReentrancyGuard.sol";
+import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
+import {Address} from "openzeppelin/utils/Address.sol";
 
 // embedded intent standards
 import {Erc20RecordCore} from "../standards/Erc20Record.sol";
@@ -58,6 +60,8 @@ contract EntryPoint is
     using IntentSolutionLib for IntentSolution;
     using UserIntentLib for UserIntent;
     using RevertReason for bytes;
+    using ECDSA for bytes32;
+    using Address for address;
 
     // data limits
     uint256 private constant CONTEXT_DATA_MAX_LEN = 2048;
@@ -413,7 +417,7 @@ contract EntryPoint is
         bytes32 validatedIntents
     ) private view {
         // validate intent with account
-        try IAccount(intent.sender).validateUserIntent(intent, intentHash) returns (IAggregator aggregator) {
+        try this.validateSignature(intent, intentHash) returns (IAggregator aggregator) {
             //check if intent is to be verified by aggregator
             if (aggregator != IAggregator(address(0))) {
                 if (aggregator != signatureAggregator) {
@@ -432,6 +436,17 @@ contract EntryPoint is
         } catch {
             revert FailedIntent(intentIndex, 0, "AA24 signature error (or OOG)");
         }
+    }
+
+    function validateSignature(UserIntent calldata intent, bytes32 intentHash) external view returns (IAggregator) {
+        address signer = intent.sender;
+        if (signer.isContract()) {
+            return IAccount(signer).validateUserIntent(intent, intentHash);
+        }
+
+        bytes32 hash = intentHash.toEthSignedMessageHash();
+        require(signer == hash.recover(intent.signature), "invalid signature");
+        return IAggregator(address(0));
     }
 
     /**
