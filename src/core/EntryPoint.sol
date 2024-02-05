@@ -29,6 +29,7 @@ import {EthRequireCore} from "../standards/EthRequire.sol";
 import {SequentialNonceManagerCore} from "../standards/SequentialNonce.sol";
 import {SimpleCallCore} from "../standards/SimpleCall.sol";
 import {UserOperationCore} from "../standards/UserOperation.sol";
+import {MulticallCore} from "../standards/MulticallDelegate.sol";
 
 // embedded intent standard IDs
 bytes32 constant SIMPLE_CALL_STD_ID = bytes32(uint256(0));
@@ -40,7 +41,8 @@ bytes32 constant ETH_RELEASE_STD_ID = bytes32(uint256(5));
 bytes32 constant ETH_REQUIRE_STD_ID = bytes32(uint256(6));
 bytes32 constant SEQUENTIAL_NONCE_STD_ID = bytes32(uint256(7));
 bytes32 constant USER_OPERATION_STD_ID = bytes32(uint256(8));
-uint256 constant NUM_EMBEDDED_STANDARDS = uint256(9);
+bytes32 constant MULTICALL_STD_ID = bytes32(uint256(9));
+uint256 constant NUM_EMBEDDED_STANDARDS = uint256(10);
 
 contract EntryPoint is
     IEntryPoint,
@@ -55,7 +57,8 @@ contract EntryPoint is
     EthReleaseCore,
     EthRequireCore,
     SequentialNonceManagerCore,
-    UserOperationCore
+    UserOperationCore,
+    MulticallCore
 {
     using IntentSolutionLib for IntentSolution;
     using UserIntentLib for UserIntent;
@@ -205,6 +208,8 @@ contract EntryPoint is
                     _executeSequentialNonce(intent.sender, intent.intentData[segmentIndex]);
                 } else if (standardId == USER_OPERATION_STD_ID) {
                     _executeUserOperation(intent.sender, intent.intentData[segmentIndex]);
+                } else if (standardId == MULTICALL_STD_ID) {
+                    _executeMulticall(intent.sender, intent.intentData[segmentIndex]);
                 } else {
                     revert FailedIntent(intentIndex, segmentIndex, "AA82 unknown standard");
                 }
@@ -445,7 +450,7 @@ contract EntryPoint is
         }
 
         bytes32 hash = intentHash.toEthSignedMessageHash();
-        require(signer == hash.recover(intent.signature), "invalid signature");
+        require(signer == hash.recover(intent.signature), "EOA: invalid signature");
         return IAggregator(address(0));
     }
 
