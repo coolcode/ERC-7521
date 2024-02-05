@@ -30,6 +30,16 @@ contract SimpleAccount is BaseAccount, UUPSUpgradeable, Initializable, IAccountP
         _disableInitializers();
     }
 
+    modifier onlyOwner() {
+        _onlyOwner();
+        _;
+    }
+
+    modifier isAuth() {
+        _requireFromEntryPointOrOwner();
+        _;
+    }
+
     /**
      * @dev The _entryPoint member is immutable, to reduce gas consumption.  To upgrade EntryPoint,
      * a new implementation of SimpleAccount must be deployed with the new EntryPoint address, then upgrading
@@ -79,8 +89,7 @@ contract SimpleAccount is BaseAccount, UUPSUpgradeable, Initializable, IAccountP
     /**
      * execute a transaction (called directly from owner, or by entryPoint)
      */
-    function execute(address dest, uint256 value, bytes calldata func) external {
-        _requireFromEntryPointOrOwner();
+    function execute(address dest, uint256 value, bytes calldata func) external isAuth {
         _call(dest, value, func);
     }
 
@@ -88,8 +97,7 @@ contract SimpleAccount is BaseAccount, UUPSUpgradeable, Initializable, IAccountP
      * execute a sequence of transactions
      * @dev to reduce gas consumption for trivial case (no value), use a zero-length array to mean zero value
      */
-    function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external {
-        _requireFromEntryPointOrOwner();
+    function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external isAuth {
         require(
             dest.length == func.length && (value.length == 0 || value.length == func.length),
             "wrong batch array lengths"
@@ -126,10 +134,49 @@ contract SimpleAccount is BaseAccount, UUPSUpgradeable, Initializable, IAccountP
     // solhint-disable-next-line no-empty-blocks
     receive() external payable {}
 
+    struct Call3 {
+        address target;
+        bool allowFailure;
+        bytes callData;
+    }
+
+    struct Result {
+        bool success;
+        bytes returnData;
+    }
+
     /**
-     * Add a test to exclude this contract from coverage report
-     * note: there is currently an open ticket to resolve this more gracefully
-     * https://github.com/foundry-rs/foundry/issues/2988
+     * @dev Multicall
      */
-    function test_test() public {}
+    /// @notice Aggregate calls, ensuring each returns success if required
+    /// @param calls An array of Call3 structs
+    /// @return returnData An array of Result structs
+    function aggregate3(Call3[] calldata calls) external payable isAuth returns (Result[] memory returnData) {
+        uint256 length = calls.length;
+        returnData = new Result[](length);
+        Call3 calldata calli;
+        for (uint256 i = 0; i < length;) {
+            Result memory result = returnData[i];
+            calli = calls[i];
+            (result.success, result.returnData) = calli.target.call(calli.callData);
+            assembly {
+                // Revert if the call fails and failure is not allowed
+                // `allowFailure := calldataload(add(calli, 0x20))` and `success := mload(result)`
+                if iszero(or(calldataload(add(calli, 0x20)), mload(result))) {
+                    // set "Error(string)" signature: bytes32(bytes4(keccak256("Error(string)")))
+                    mstore(0x00, 0x08c379a000000000000000000000000000000000000000000000000000000000)
+                    // set data offset
+                    mstore(0x04, 0x0000000000000000000000000000000000000000000000000000000000000020)
+                    // set length of revert string
+                    mstore(0x24, 0x0000000000000000000000000000000000000000000000000000000000000017)
+                    // set revert string: bytes32(abi.encodePacked("Multicall3: call failed"))
+                    mstore(0x44, 0x4d756c746963616c6c333a2063616c6c206661696c6564000000000000000000)
+                    revert(0x00, 0x64)
+                }
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
 }
