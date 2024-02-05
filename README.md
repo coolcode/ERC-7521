@@ -5,6 +5,11 @@
 
 A generalized intent specification for smart contract wallets, allowing authorization of current and future intent standards at sign time.
 
+## Changes
+
+- [x] support EOA account as sender
+- [x] integrate multicall3
+
 ## Specification
 
 View the spec here: [ERC-7521](https://github.com/essential-contributions/EIPs/blob/master/EIPS/eip-7521.md).
